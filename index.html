@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>圖資雲分析器</title>
+<script src="//ajax.googleapis.com/ajax/libs/jquery/2.1.4/jquery.min.js"></script>
+<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.6/css/bootstrap.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.5.1/dist/leaflet.css"
+integrity="sha512-xwE/Az9zrjBIphAcBb3F6JVqxf46+CDLwfLMHloNu6KEQCAWi6HcDUbeOfBIptF7tcCzusKFjFw2yuvEpDL9wQ=="
+crossorigin=""/>
+<!-- Make sure you put this AFTER Leaflet's CSS -->
+<script src="https://unpkg.com/leaflet@1.5.1/dist/leaflet.js"
+integrity="sha512-GffPMF3RvMeYyc1LWMHtK8EbPv0iNZ8/oTtHPx9/cc2ILxQ+u905qIwdpULaqDkyBKgOaB57QTMg7ztg8Jm2Og=="
+   crossorigin=""></script>
+<style>
+#mapid { height: 400px; width: 400px; }
+html { height: 100%; }
+</style>
+</head>
+<body style="height: 100%; max-height: 100%">
+<div class="container-fluid" style="height: 100%; max-height: 100%">
+    <div class="row" style="height:100%; max-height: 100%">
+        <div class="col-md-6">
+            <form method="get">
+                位置：<input type="text" placeholder="座標或地址">
+                <button type="submit">移動</button>
+            </form>
+            <div id="mapid"></div>
+        </div>
+        <div class="col-md-6" style="height: 100%; max-height: 100%">
+           <div id="layer-set" style="max-height: 80%; overflow: scroll">
+           </div>
+        </div>
+    </div>
+</div>
+<script type="text/html" id="tmpl-layer">
+<div class="list-group">
+    <a href="#" class="list-group-item">
+        <h4 class="list-group-item-heading"></h4>
+        <ul class="list-group-item-text">...</ul>
+    </a>
+</div>
+</script>
+<script>
+// https://docs.google.com/spreadsheets/d/1JT7RDDEhidPqhwmYNyA1dsxh1twtK20ni7dyNozmo8s/edit?usp=sharing
+var map = L.map('mapid').setView([25.000659102852,121.51006510846], 14);
+
+L.tileLayer('https://wmts.nlsc.gov.tw/wmts/EMAP5/{Style}/{TileMatrixSet}/{z}/{y}/{x}', {
+        attribution: '&copy; <a href="http://maps.nlsc.gov.tw/S09SOA/">國土測繪圖資服務雲</a> contributors',
+        Style: 'default',
+        TileMatrixSet: 'GoogleMapsCompatible',
+}).addTo(map);
+
+var myLayer = new L.GridLayer();
+myLayer.tile_pool = {};
+myLayer.createTile = function(coords, done){
+	// create a <canvas> element for drawing
+	var tile = L.DomUtil.create('canvas', 'leaflet-tile');
+    setTimeout(function () {
+		done(null, tile);	// Syntax is 'done(error, tile)'
+    }, 10);
+
+	return tile;
+};
+
+myLayer.on('tileload', function(e){
+	var coords = e.coords;
+	myLayer.tile_pool[[coords.x, coords.y, coords.z].join(',')] = e.tile;
+}).on('tileunload', function(e){
+	var coords = e.coords;
+	delete(myLayer.tile_pool[[coords.x, coords.y, coords.z].join(',')]);
+});
+
+map.addLayer(myLayer);
+
+
+var layer_set = [
+    ["國土利用調查-1類農業", "https://wmts.nlsc.gov.tw/wmts/LUIMAP01/default/GoogleMapsCompatible/{z}/{y}/{x}"],
+    ["國土利用調查-2類森林", "https://wmts.nlsc.gov.tw/wmts/LUIMAP02/default/GoogleMapsCompatible/{z}/{y}/{x}"],
+    ["國土利用調查-3類交通", "https://wmts.nlsc.gov.tw/wmts/LUIMAP03/default/GoogleMapsCompatible/{z}/{y}/{x}"],
+    ["國土利用調查-4類水利", "https://wmts.nlsc.gov.tw/wmts/LUIMAP04/default/GoogleMapsCompatible/{z}/{y}/{x}"],
+    ["國土利用調查-5類建築", "https://wmts.nlsc.gov.tw/wmts/LUIMAP05/default/GoogleMapsCompatible/{z}/{y}/{x}"],
+    ["國土利用調查-6類公共", "https://wmts.nlsc.gov.tw/wmts/LUIMAP06/default/GoogleMapsCompatible/{z}/{y}/{x}"],
+    ["國土利用調查-7類遊憩", "https://wmts.nlsc.gov.tw/wmts/LUIMAP07/default/GoogleMapsCompatible/{z}/{y}/{x}"],
+    ["國土利用調查-8類礦鹽", "https://wmts.nlsc.gov.tw/wmts/LUIMAP08/default/GoogleMapsCompatible/{z}/{y}/{x}"],
+    ["國土利用調查-9類其他", "https://wmts.nlsc.gov.tw/wmts/LUIMAP09/default/GoogleMapsCompatible/{z}/{y}/{x}"],
+    ["國土利用調查成果圖", "https://wmts.nlsc.gov.tw/wmts/LUIMAP/default/GoogleMapsCompatible/{z}/{y}/{x}"],
+];
+
+$('#layer-set').on('mouseenter', '.list-group-item-heading', function(e){
+	map.current_layer = $(this).parents('.list-group');
+	var template_url = map.current_layer.data('template-url');
+	for (var coords in myLayer.tile_pool) {
+		var tile = myLayer.tile_pool[coords];
+		coords = coords.split(',');
+
+		var img = new Image;
+		img.crossOrigin = "Anonymous";
+		img.tile = tile;
+		img.addEventListener("load", function() {
+				// execute drawImage statements here
+			var tile = this.tile;
+			tile.width = tile.height = 256;
+			tile.getContext('2d').drawImage(this, 0, 0, 256, 256);
+		}, false);
+
+		img.src = template_url.replace('{z}', coords[2]).replace('{x}', coords[0]).replace('{y}', coords[1]);
+	}
+});
+
+layer_set.map(function(layer){
+    var layer_dom = $($('#tmpl-layer').html());
+    layer_dom.data('template-url', layer[1]);
+    $('h4.list-group-item-heading', layer_dom).text(layer[0]);
+    $('#layer-set').append(layer_dom);
+});
+
+map.on('moveend', function(){
+    refresh_detail();
+});
+
+var refresh_detail = function(){
+    $('.list-group').each(function(){
+        var template_url = $(this).data('template-url');
+        var output_dom = $('.list-group-item-text', this);
+        var bounds = map.getPixelBounds();
+
+        var tileImage = {};
+        var imageLoading = 1;
+        var totalPoint = 0;
+
+        var tileCounter = function(){
+            imageLoading --;
+            if (imageLoading) return;
+            var colorCounter = {};
+            for (var x_y in tileImage) {
+                var imageData = tileImage[x_y].canvas.getContext('2d').getImageData(0, 0, 256, 256).data;
+
+                for (var i = 0; i < tileImage[x_y].points.length; i ++) {
+                    totalPoint ++;
+                    var point = tileImage[x_y].points[i];
+                    var p = (point[1] * 256 + point[0]) * 4;
+                    var rgb = [imageData[p + 0],imageData[p + 1],imageData[p + 2]].map(function(c){return Math.round(c / 51); }).join(',');
+                    if (rgb == '0,0,0') continue;
+                    if ('undefined' === typeof(colorCounter[rgb])) {
+                        colorCounter[rgb] = 0;
+                    }
+                    colorCounter[rgb] ++;
+                }
+            }
+
+            var colorArray = [];
+            for (var rgb in colorCounter) {
+                colorArray.push([rgb, colorCounter[rgb]]);
+            }
+            output_dom.html('');
+            colorArray.sort(function(a,b) { return b[1] - a[1]; }).slice(0, 10).map(function(data) {
+                var rgb  = data[0];
+                if (colorMap[rgb]) {
+                    output_dom.append($('<li></li>')
+                            .text((colorCounter[rgb] * 100 / totalPoint).toPrecision(2) + '%' + colorMap[rgb][4])
+                            .attr('title', JSON.stringify(colorMap[rgb]))
+                            .css('background-color', 'rgb(' + colorMap[rgb][6] + ')')
+                                .css('color', 'rgb(' + colorMap[rgb][6].split(',').map(function(a){ return 255-a; }).join(',') + ')')
+                            );
+                }
+                //console.log(rgb + ':' + colorCounter[rgb]);
+                //console.log(colorMap[rgb]);
+            });
+        };
+
+        imageLoading ++;
+        var colorMap = {};
+        $.get('landuse.json', function(obj){
+            for (var i = 1; i < obj.length; i ++) {
+                colorMap[obj[i][6].split(',').map(function(a) { return Math.round(a / 51); }).join(',')] = obj[i];
+            }
+
+            tileCounter();
+        }, 'json');
+
+        for (var x = bounds.getTopLeft().x; x < bounds.getBottomRight().x; x ++) {
+            for (var y = bounds.getTopLeft().y; y < bounds.getBottomRight().y; y ++) {
+                var tileX = Math.floor(x / 256);
+                var tileY = Math.floor(y / 256);
+                var imageX = x % 256;
+                var imageY = y % 256;
+
+                if ('undefined' === typeof(tileImage[tileX + '-' + tileY])) {
+                    var img = new Image;
+                    imageLoading ++;
+                    img.points = [];
+                    img.crossOrigin = "Anonymous";
+                    img.src = template_url.replace('{z}', map.getZoom()).replace('{x}', tileX).replace('{y}', tileY);
+                    img.onload = function() {
+                        var canvas = document.createElement('canvas');
+                        canvas.width = canvas.height = 256;
+                        canvas.getContext('2d').drawImage(this, 0, 0);
+                        this.canvas = canvas;
+
+                        tileCounter();
+                    }
+                    tileImage[tileX + '-' + tileY] = img;
+                }
+                tileImage[tileX + '-' + tileY].points.push([imageX, imageY]);
+            }
+        }
+        tileCounter();
+    });
+};
+
+refresh_detail();
+
+</script>
+</body>
+</html>
